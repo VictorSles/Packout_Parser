@@ -13,14 +13,14 @@ SESSION = None
 ###########
 def avisos():
     var_pass = """
-    +++++++++++++++++++++++++++++++++++++++++++
-                      PASS
-    +++++++++++++++++++++++++++++++++++++++++++
++++++++++++++++++++++++++++++++++++++++++++
+                  PASS
++++++++++++++++++++++++++++++++++++++++++++
                   """
     var_fail = """
-    +++++++++++++++++++++++++++++++++++++++++++
-                      FAIL
-    +++++++++++++++++++++++++++++++++++++++++++
++++++++++++++++++++++++++++++++++++++++++++
+                  FAIL
++++++++++++++++++++++++++++++++++++++++++++
                   """
     return var_pass, var_fail
 def getToken():
@@ -107,7 +107,34 @@ def getBomId(wipid_):
 ####################################################################
 # ENVIAR RESULTADOS
 ####################################################################
-def getInfoforPackout():
+def getPackoutValidation(serial, station_context):
+    try:
+        url = f"{URL_BASE}packout/api/packout/"
+        sessao_personalizada = criar_sessao_station(station_context)
+        parameters = {"packoutType": 2, "scannedValue":serial}
+        request = sessao_personalizada.get(url=url, params=parameters, verify=False)
+        data = request.json()
+        ispacked = next((item.get("IsPacked") for item in data["WipPackoutItems"]), None)
+        boxIfPacked = next((container["Name"]
+                            for item in data["WipPackoutItems"]
+                            for container in item.get("Containers", [])))
+        isOnHold = next((item.get("IsOnHold") for item in data["WipPackoutItems"]), None)
+        MaterialName = next((item.get("MaterialName") for item in data["WipPackoutItems"]), None)
+        if ispacked == True:
+            print(f"{'*'*40}")
+            print(f"Packout prévio: {boxIfPacked}")
+            print(f"Material: {MaterialName}")
+            print(f"{'*'*40}")
+            return True
+        else:
+            print(f"{'*'*40}")
+            print(f"Packout prévio: {boxIfPacked}")
+            print(f"Material: {MaterialName}")
+            print(f"{'*'*40}")
+            return False
+    except Exception as e:
+        print(e)
+def getInfoforPackout(serial):
     try:
         url = f"{URL_BASE}/packout/api/wipPackout/container/create"
         parameters = {"containerTypeId": 4,"packingRequestId": "","wipSerialNumber": ""}
@@ -139,7 +166,11 @@ def getInfoforPackout():
         Resourcer = int(input("SELECIONE O RESOURCER PARA REALIZAR O PACKOUT >>> "))
         if Resourcer == 4:
             station_context_content = '{"routeId":25,"routeStepId":714,"resourceId":803,"resourceName":"SAM SMART 04 - Packout","routeName":"SAMSUNG SMARTPHONE A075","routeProcessTypeId":2,"routeStepName":"Packout","isPullStep":false,"isStartingStep":false,"routeStepNameId":9,"stationType":7,"routeTypeId":1,"routeType":"Production","manufacturingAreaId":48,"manufacturingAreaName":"SAMSUNG SMARTPHONE 04"}'
-            content(station_context_content)
+            var_get_information_to_packout = getPackoutValidation(serial, station_context_content)
+            if var_get_information_to_packout == True:
+                content(station_context_content)
+            else:
+                print(var_get_information_to_packout)
         elif Resourcer == 3:
             station_context_content = '{"routeId":25,"routeStepId":714,"resourceId":802,"resourceName":"SAM SMART 03 - Packout","routeName":"SAMSUNG SMARTPHONE A075","routeProcessTypeId":2,"routeStepName":"Packout","isPullStep":false,"isStartingStep":false,"routeStepNameId":9,"stationType":7,"routeTypeId":1,"routeType":"Production","manufacturingAreaId":47,"manufacturingAreaName":"SAMSUNG SMARTPHONE 03"}'
             content(station_context_content)
@@ -191,12 +222,12 @@ def bomStructure_128(bom_id):
             print(var_pass)
             print(f"""HALB: {halb_top}
 MEMORY: {memory}
-DESCRIPTION: {description}\n""")                    
+DESCRIPTION: {description}\n""")      
+            return halb_top, memory, description
 def bomStructure_256(bom_id):
     url = f"{URL_BASE}api-external-api/api/boms/{bom_id}/bomStructure"
-    r = SESSION.get(url, params={"bomId":bom_id}, verify=False)
+    r = SESSION.get(url, json={"bomId":bom_id}, verify=False)
     data = r.json()
-    aviso = "BOM DIVERGENTE"
     halb_top = None
     if isinstance(data, dict):
         halb_top = next(
@@ -205,32 +236,34 @@ def bomStructure_256(bom_id):
                 for item in data["BomHierarchy"]
                 if item.get("MaterialName") == "SMS1108-000750"
             ),
-            aviso
+            None
         )
-    if isinstance(data, dict):
         memory = next(
             (
                 item.get("MaterialName")
                 for item in data["BomHierarchy"]
                 if item.get("ParentBomName") == f"{halb_top}"
             ),
-            aviso
+            None
         )
-    if isinstance(data, dict):
         description = next(
             (
                 item.get("MaterialDescription")
                 for item in data["BomHierarchy"]
                 if item.get("MaterialName") == f"{memory}"
             ),
-            aviso
+            None
         )
-    var_pass = avisos()
-    print(var_pass[0])
-    print(f"""HALB: {halb_top}
+        if halb_top == None:
+            var_fail = avisos()[1]
+            print(var_fail)
+        else:
+            var_pass = avisos()
+            print(var_pass[0])
+            print(f"""HALB: {halb_top}
 MEMORY: {memory}
 DESCRIPTION: {description}\n""")
-
+            return halb_top, memory, description
 def choice():
     MEMORIA = int(input("""\n
 +++++++++++++++++++++++++++++++++++++++++++
@@ -246,17 +279,27 @@ DEFINA A MEMORIA
         if MEMORIA == 0:
             serial = input("\nS/N >>> ")
             wipId_var = wipID(serial)[0]
-            bomId = getBomId(wipId_var)
-            getInfoforPackout()
-            if bomStructure_128(bomId) == None:
-                msg.showerror("ATENÇÃO", "BOM DIVERGENTE, INFORME SEU LÍDER")
+            if wipId_var != None:
+                bomId = getBomId(wipId_var)
+                if bomStructure_128(bomId) == None:
+                    print("ATENÇÃO, BOM DIVERGENTE. INFORME SEU LÍDER")
+                else:
+                    bomStructure_128(bomId)
+                    getInfoforPackout(serial)
+            else:
+                print("ERRO AO OBTER O MATERIAL_NAME")
         if MEMORIA == 1:
             serial = input("\nS/N >>> ")
             wipId_var = wipID(serial)[0]
-            bomId = getBomId(wipId_var)
-            getInfoforPackout()
-            if bomStructure_256(bomId) == None:
-                msg.showerror("ATENÇÃO", "BOM DIVERGENTE, INFORME SEU LÍDER")
+            if wipId_var != None:
+                bomId = getBomId(wipId_var)
+                if bomStructure_256(bomId) == None:
+                    print("ATENÇÃO, BOM DIVERGENTE. INFORME SEU LÍDER")
+                else:
+                    bomStructure_256(bomId)
+                    getInfoforPackout(serial)
+            else:
+                print("ERRO AO OBTER O MATERIAL_NAME")
     except Exception as e:
         print(f"ERRO DURANTE CROSS-CHECKING! {e}")
 choice()
