@@ -124,7 +124,6 @@ def getPackoutValidation(serial, station_context):
             print(f"{'*'*40}")
             print(f"Packout prévio: {boxIfPacked}")
             print(f"Material: {MaterialName}")
-            print(f"{'*'*40}")
             return True
         else:
             print(f"{'*'*40}")
@@ -134,6 +133,14 @@ def getPackoutValidation(serial, station_context):
             return False
     except Exception as e:
         print(e)
+def get_id_container(smgboxname, sessao):
+            url_get_container_id = f"{URL_BASE}core-application/api/containercontent/search"
+            params_get_container_id = {"filter":{smgboxname}}
+            request = sessao.get(url=url_get_container_id, params=params_get_container_id)
+            data = request.json()
+            container_id = next(item.get("Id") for item in data)
+            print(container_id)
+            return container_id
 def getInfoforPackout(serial):
     try:
         url = f"{URL_BASE}/packout/api/wipPackout/container/create"
@@ -155,22 +162,26 @@ def getInfoforPackout(serial):
             container = None
             if isinstance (data, dict):
                 smgbox = data.get("Name")
-                container = data.get("ContainerTypeName")               
+                container = data.get("ContainerTypeName")
                 status = data.get("ContainerStatus")
-            print(f'\n{"*"*15} BOX CRIADA {"*"*15}\n')
-            print(f"BOX: {smgbox}")
-            print(f"TIPO: {container}")
-            print(f"STATUS: {status}")
-            print(f"\n{"*"*40}\n")
+                print(f'\n{"*"*15} BOX CRIADA {"*"*15}\n')
+                print(f"BOX: {smgbox}")
+                print(f"TIPO: {container}")
+                print(f"STATUS: {status}")
+                print(f"\n{"*"*40}\n")
+                return smgbox
+        def station_choices(station_context, information_packout):
+            if information_packout == True:
+                smgbox = content(station_context)
+                get_id_container(smgbox, SESSION)
+            else:
+                return content(station_context)
         print(resourcer_oprtions)
         Resourcer = int(input("SELECIONE O RESOURCER PARA REALIZAR O PACKOUT >>> "))
         if Resourcer == 4:
             station_context_content = '{"routeId":25,"routeStepId":714,"resourceId":803,"resourceName":"SAM SMART 04 - Packout","routeName":"SAMSUNG SMARTPHONE A075","routeProcessTypeId":2,"routeStepName":"Packout","isPullStep":false,"isStartingStep":false,"routeStepNameId":9,"stationType":7,"routeTypeId":1,"routeType":"Production","manufacturingAreaId":48,"manufacturingAreaName":"SAMSUNG SMARTPHONE 04"}'
             var_get_information_to_packout = getPackoutValidation(serial, station_context_content)
-            if var_get_information_to_packout == True:
-                content(station_context_content)
-            else:
-                print(var_get_information_to_packout)
+            station_choices(station_context_content, var_get_information_to_packout)
         elif Resourcer == 3:
             station_context_content = '{"routeId":25,"routeStepId":714,"resourceId":802,"resourceName":"SAM SMART 03 - Packout","routeName":"SAMSUNG SMARTPHONE A075","routeProcessTypeId":2,"routeStepName":"Packout","isPullStep":false,"isStartingStep":false,"routeStepNameId":9,"stationType":7,"routeTypeId":1,"routeType":"Production","manufacturingAreaId":47,"manufacturingAreaName":"SAMSUNG SMARTPHONE 03"}'
             content(station_context_content)
