@@ -69,7 +69,7 @@ def criar_sessao_station(stationContext):
             sessao.headers.update({"Content-Type": "application/json"})
             return sessao
     except Exception as e:
-        return f"ERROR - {e}"
+        return f"ERROR NA ABERTURA DE SESSÃO- {e}"
 
 SESSION = criar_sessao()
 def wipID(serial):
@@ -111,36 +111,77 @@ def getPackoutValidation(serial, station_context):
     try:
         url = f"{URL_BASE}packout/api/packout/"
         sessao_personalizada = criar_sessao_station(station_context)
-        parameters = {"packoutType": 2, "scannedValue":serial}
-        request = sessao_personalizada.get(url=url, params=parameters, verify=False)
-        data = request.json()
-        ispacked = next((item.get("IsPacked") for item in data["WipPackoutItems"]), None)
-        boxIfPacked = next((container["Name"]
-                            for item in data["WipPackoutItems"]
-                            for container in item.get("Containers", [])))
-        isOnHold = next((item.get("IsOnHold") for item in data["WipPackoutItems"]), None)
-        MaterialName = next((item.get("MaterialName") for item in data["WipPackoutItems"]), None)
-        if ispacked == True:
-            print(f"{'*'*40}")
-            print(f"Packout prévio: {boxIfPacked}")
-            print(f"Material: {MaterialName}")
-            return True
-        else:
-            print(f"{'*'*40}")
-            print(f"Packout prévio: {boxIfPacked}")
-            print(f"Material: {MaterialName}")
-            print(f"{'*'*40}")
-            return False
+        params = {"packoutType": 2, "scannedValue": serial}
+        response = sessao_personalizada.get(url=url, params=params, verify=False)
+        response.raise_for_status()
+        data = response.json()
+        wip_items = data.get("WipPackoutItems", [])
+        is_packed = next((item.get("IsPacked") for item in wip_items), None)
+        material_name = next((item.get("MaterialName") for item in wip_items), None)
+        box_name = next(
+            (container.get("Name")
+             for item in wip_items
+             for container in item.get("Containers", [])
+             if "Name" in container),
+            None
+        )
+        box_id = next(
+            (container.get("Id")
+             for item in wip_items
+             for container in item.get("Containers", [])
+             if "Id" in container),
+            None
+        )
+        container_type = next(
+            (ctype.get("Name")
+             for item in wip_items
+             for ctype in item.get("CompatibleContainerTypes", [])
+             if "Name" in ctype),
+            None
+        )
+
+        if is_packed:
+            print(f"\n{'*' * 40}")
+            print(f"Packout prévio detectado:")
+            print(f"Box: {box_name}")
+            print(f"Material: {material_name}")
+            print(f"Box ID: {box_id}")
+            print(f"Tipo: {container_type}")
+            return True, box_id, container_type
+
+        print("Item ainda não embalado.")
+        print(f"Material: {material_name}")
+        print(f"Tipo de caixa sugerido: {container_type}")
+
+        return False, None, container_type
+
     except Exception as e:
-        print(e)
-def get_id_container(smgboxname, sessao):
-            url_get_container_id = f"{URL_BASE}core-application/api/containercontent/search"
-            params_get_container_id = {"filter":{smgboxname}}
-            request = sessao.get(url=url_get_container_id, params=params_get_container_id)
-            data = request.json()
-            container_id = next(item.get("Id") for item in data)
-            print(container_id)
-            return container_id
+        print(f"ERRO: {e}")
+        return None, None, None
+def fullPackoutSN(stationcontext, wip_id, box_id):
+    try:
+        content = stationcontext
+        url = f"{URL_BASE}mms-wip-api/api/Packout/PerformPack"
+        sessao = criar_sessao_station(stationContext=content)
+        parameters = {'id': wip_id, 'containerId': box_id, 'containerTypeId': 4, 'dataCollectionItems': []}
+        request = sessao.post(url=url, json=parameters, verify=False)
+        data = request.json()
+        return data
+    except Exception as e:
+        print(f"ERRO DURANTE O PACKOUT DA S/N: {e}")
+def fullPackoutSN_validation(station_context, wipId_2, boxid, wipId_3):
+    if assemblyNumber_WIP == wipId_3:
+        totalItemInBox = next((totalItem.get("TotalItems")
+                               for totalItem in dates.get("items", [])
+                               if "TotalItems" in totalItem),
+                              None
+                              )
+        print(f"ASSEMBLY: {assemblyNumber_WIP}")
+        print(f"TOTAL ITEMS: {totalItemInBox}")
+        return True
+    else:
+        print(f"NOK: {assemblyNumber_WIP} - {wipId_3}")
+        return False
 def getInfoforPackout(serial):
     try:
         url = f"{URL_BASE}/packout/api/wipPackout/container/create"
@@ -170,18 +211,31 @@ def getInfoforPackout(serial):
                 print(f"STATUS: {status}")
                 print(f"\n{"*"*40}\n")
                 return smgbox
-        def station_choices(station_context, information_packout):
-            if information_packout == True:
-                smgbox = content(station_context)
-                get_id_container(smgbox, SESSION)
+        def station_choices(station_context, information_packout, serial): ## 2º retorna 3 informações (ISPACKED, BOXID e CONTAINER TYPE)
+            wipId_1 = wipID(serial)
+            wipId_2 = wipId_1[0]
+            information_packout_bool = information_packout[0] 
+            boxid = information_packout[1]
+            if information_packout_bool == True:
+                while True:
+                    new_sn = input(">>> LINK S/N: ")
+                    wipId_1 = wipID(new_sn)
+                    wipId_2 = wipId_1[0]
+                    wipId_3 = wipId_1[1]
+                    # get_information_to_packout = getPackoutValidation(new_sn, station_context)
+                    final_result = fullPackoutSN_validation(station_context, wipId_2, boxid, wipId_3)
+                    if final_result == True:
             else:
-                return content(station_context)
+                content(station_context)
         print(resourcer_oprtions)
         Resourcer = int(input("SELECIONE O RESOURCER PARA REALIZAR O PACKOUT >>> "))
         if Resourcer == 4:
             station_context_content = '{"routeId":25,"routeStepId":714,"resourceId":803,"resourceName":"SAM SMART 04 - Packout","routeName":"SAMSUNG SMARTPHONE A075","routeProcessTypeId":2,"routeStepName":"Packout","isPullStep":false,"isStartingStep":false,"routeStepNameId":9,"stationType":7,"routeTypeId":1,"routeType":"Production","manufacturingAreaId":48,"manufacturingAreaName":"SAMSUNG SMARTPHONE 04"}'
             var_get_information_to_packout = getPackoutValidation(serial, station_context_content)
-            station_choices(station_context_content, var_get_information_to_packout)
+            if var_get_information_to_packout[0] == None:
+                print(f"None Result - {var_get_information_to_packout}")
+            else:
+                station_choices(station_context_content, var_get_information_to_packout, serial)
         elif Resourcer == 3:
             station_context_content = '{"routeId":25,"routeStepId":714,"resourceId":802,"resourceName":"SAM SMART 03 - Packout","routeName":"SAMSUNG SMARTPHONE A075","routeProcessTypeId":2,"routeStepName":"Packout","isPullStep":false,"isStartingStep":false,"routeStepNameId":9,"stationType":7,"routeTypeId":1,"routeType":"Production","manufacturingAreaId":47,"manufacturingAreaName":"SAMSUNG SMARTPHONE 03"}'
             content(station_context_content)
